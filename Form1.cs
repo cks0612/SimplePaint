@@ -26,6 +26,20 @@ namespace SimplePaint
 
         private int currentLineWidth = 2;
 
+        private float zoom = 1.0f;
+
+        
+
+        private bool isPanning = false;
+        private Point panStartMouse;
+        private Point panStartScroll;
+
+        private bool isDraggingImage = false;
+        private Point dragStart;
+        private Point imageOffset = new Point(0, 0);
+
+
+
         public form1()
         {
             InitializeComponent();
@@ -34,7 +48,7 @@ namespace SimplePaint
             canvasGraphics = Graphics.FromImage(canvasBitmap);
             canvasGraphics.Clear(Color.White);
 
-            picCanvas.Image = canvasBitmap;
+            //picCanvas.Image = canvasBitmap;
 
             picCanvas.MouseDown += PicCanvas_MouseDown;
             picCanvas.MouseMove += PicCanvas_MouseMove;
@@ -55,30 +69,83 @@ namespace SimplePaint
             trbLineWidth.ValueChanged += trbLineWidth_ValueChanged;
 
             btnSaveFile.Click += BtnSaveFile_Click;
+
+            btnOpenFile.Click += BtnOpenFile_Click;
+
+            panelCanvas.MouseWheel += PanelCanvas_MouseWheel;
+            panelCanvas.MouseDown += PanelCanvas_MouseDown;
+            panelCanvas.MouseMove += PanelCanvas_MouseMove;
+            panelCanvas.MouseUp += PanelCanvas_MouseUp;
+
+            // 포커스 안 잡히면 휠 안 먹음
+            panelCanvas.Focus();
+            panelCanvas.MouseEnter += (s, e) => panelCanvas.Focus();
+
+        }
+
+        private Point GetScaledPoint(Point p)
+        {
+            return new Point(
+                (int)((p.X - imageOffset.X) / zoom),
+                (int)((p.Y - imageOffset.Y) / zoom)
+            );
         }
 
         private void PicCanvas_MouseDown(object sender, MouseEventArgs e)
         {
-            isDrawing = true; 
-            startPoint = e.Location; 
+
+            if ((ModifierKeys & Keys.Control) == Keys.Control)
+            {
+                isDraggingImage = true;
+                dragStart = e.Location;
+                picCanvas.Cursor = Cursors.Hand;
+                return;
+            }
+
+            isDrawing = true;
+            startPoint = GetScaledPoint(e.Location);
         }
 
         private void PicCanvas_MouseMove(object sender, MouseEventArgs e)
         {
+
+            if (isDraggingImage)
+            {
+                int dx = e.X - dragStart.X;
+                int dy = e.Y - dragStart.Y;
+
+                imageOffset.X += dx;
+                imageOffset.Y += dy;
+
+                dragStart = e.Location;
+
+                picCanvas.Invalidate();
+                return;
+            }
+
             if (!isDrawing) return;
-            endPoint = e.Location;
+            endPoint = GetScaledPoint(e.Location);
 
             picCanvas.Invalidate();
         }
 
         private void PicCanvas_MouseUp(object sender, MouseEventArgs e)
         {
+
+            if (isDraggingImage)
+            {
+                isDraggingImage = false;
+                picCanvas.Cursor = Cursors.Default;
+                return;
+            }
+
             if (!isDrawing) return;
 
             isDrawing = false;
-            endPoint = e.Location;
+            endPoint = GetScaledPoint(e.Location);
 
-            
+
+
             using (Pen pen = new Pen(currentColor, currentLineWidth))
             {
                 DrawShape(canvasGraphics, pen, startPoint, endPoint);
@@ -88,6 +155,14 @@ namespace SimplePaint
 
         private void PicCanvas_Paint(object sender, PaintEventArgs e)
         {
+            e.Graphics.TranslateTransform(imageOffset.X, imageOffset.Y);
+            e.Graphics.ScaleTransform(zoom, zoom);
+
+            if (canvasBitmap != null)
+            {
+                e.Graphics.DrawImage(canvasBitmap, 0, 0);
+            }
+
             if (!isDrawing) return;
             
             using (Pen previewPen = new Pen(currentColor, currentLineWidth))
@@ -199,6 +274,92 @@ namespace SimplePaint
                 }
             }
         }
+
+        private void BtnOpenFile_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog ofd = new OpenFileDialog())
+            {
+                ofd.Filter = "Image Files|*.png;*.jpg;*.jpeg;*.bmp";
+
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    Image img = Image.FromFile(ofd.FileName);
+
+                    canvasBitmap = new Bitmap(img);
+                    canvasGraphics = Graphics.FromImage(canvasBitmap);
+
+                    //picCanvas.Image = canvasBitmap;
+
+                    ResizeCanvasToImage();
+                }
+            }
+        }
+
+        private void ResizeCanvasToImage()
+        {
+            picCanvas.Width = canvasBitmap.Width;
+            picCanvas.Height = canvasBitmap.Height;
+        }
+
+        private void PanelCanvas_MouseWheel(object sender, MouseEventArgs e)
+        {
+
+            if ((ModifierKeys & Keys.Control) != Keys.Control)
+                return;
+
+            float oldZoom = zoom;
+
+            if (e.Delta > 0)
+                zoom += 0.1f;
+            else
+                zoom -= 0.1f;
+
+            if (zoom < 0.1f) zoom = 0.1f;
+            if (zoom > 5.0f) zoom = 5.0f;
+
+            // 마우스 기준 좌표 유지
+            var mousePos = e.Location;
+
+            panelCanvas.AutoScrollPosition = new Point(
+                (int)((mousePos.X + panelCanvas.AutoScrollPosition.X) * (zoom / oldZoom) - mousePos.X),
+                (int)((mousePos.Y + panelCanvas.AutoScrollPosition.Y) * (zoom / oldZoom) - mousePos.Y)
+            );
+
+            picCanvas.Invalidate();
+        }
+
+        private void PanelCanvas_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Middle || e.Button == MouseButtons.Right)
+            {
+                isPanning = true;
+                panStartMouse = e.Location;
+                panStartScroll = panelCanvas.AutoScrollPosition;
+                panelCanvas.Cursor = Cursors.Hand;
+            }
+        }
+
+        private void PanelCanvas_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (!isPanning) return;
+
+            int dx = e.X - panStartMouse.X;
+            int dy = e.Y - panStartMouse.Y;
+
+            panelCanvas.AutoScrollPosition = new Point(
+                -(panStartScroll.X + dx),
+                -(panStartScroll.Y + dy)
+            );
+        }
+
+        private void PanelCanvas_MouseUp(object sender, MouseEventArgs e)
+        {
+            isPanning = false;
+            panelCanvas.Cursor = Cursors.Default;
+        }
+
+        
+
     }
 
 
