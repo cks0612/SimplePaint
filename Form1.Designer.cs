@@ -111,7 +111,7 @@
             // cmbColor
             // 
             cmbColor.FormattingEnabled = true;
-            cmbColor.Items.AddRange(new object[] { "Red 빨강", "Blue 파랑", "Yellow 노랑" });
+            cmbColor.Items.AddRange(new object[] { "Black 검정", "Red 빨강", "Blue 파랑", "Green 녹색" });
             cmbColor.Location = new Point(6, 42);
             cmbColor.Name = "cmbColor";
             cmbColor.Size = new Size(134, 29);
